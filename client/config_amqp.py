@@ -1,7 +1,6 @@
 """
-Configuration for the INTERSECT client with RabbitMQ clustering support.
+Configuration for the INTERSECT client with RabbitMQ clustering support using AMQP.
 """
-
 from intersect_sdk.config.client import IntersectClientConfig
 from intersect_sdk.config.shared import (
     BrokerConfig,
@@ -10,15 +9,16 @@ from intersect_sdk.config.shared import (
     DataStoreConfigMap,
 )
 
-# Use RabbitMQ cluster configuration with Docker service names
+# Use RabbitMQ cluster configuration with hostnames only
+# For AMQP we use port 5672 
 broker_configs = [
-    {"host": "rabbitmq1", "port": 1883},
-    {"host": "rabbitmq2", "port": 1883},
+    {"host": "rabbitmq1", "port": 5672},
+    {"host": "rabbitmq2", "port": 5672},
 ]
 
 brokers = [
     ControlPlaneConfig(
-        protocol="mqtt3.1.1",
+        protocol="amqp0.9.1",  # Changed to AMQP protocol
         username="intersect_username",
         password="intersect_password",
         brokers=[BrokerConfig(**broker) for broker in broker_configs],
@@ -35,7 +35,7 @@ from intersect_sdk import IntersectClientCallback
 CLIENT_CONFIG = IntersectClientConfig(
     brokers=brokers,
     data_stores=data_stores,
-    initial_message_event_config=IntersectClientCallback(messages_to_send=[], subscribe_to_events=[]),
+    initial_message_event_config=IntersectClientCallback(messages_to_send=[], subscribe_to_events=["intersect.resilience.clustering-demo.-.counting-client.response"]),
     organization="intersect",
     facility="resilience",
     system="clustering-demo",

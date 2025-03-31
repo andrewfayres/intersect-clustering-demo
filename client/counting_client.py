@@ -1,6 +1,9 @@
 import logging
 import time
+import os
 
+import sys
+sys.path.append('/opt')
 from intersect_sdk import (
     INTERSECT_JSON_VALUE,
     IntersectClient,
@@ -10,10 +13,20 @@ from intersect_sdk import (
 )
 
 # Import our clustering configuration
-from config import CLIENT_CONFIG
+import config
+import config_amqp
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Determine which config to use based on environment variable
+PROTOCOL = os.environ.get("PROTOCOL", "mqtt")  # Default to MQTT if not set
+if PROTOCOL == "amqp":
+    CLIENT_CONFIG = config_amqp.CLIENT_CONFIG
+    logger.info("Using AMQP configuration")
+else:
+    CLIENT_CONFIG = config.CLIENT_CONFIG
+    logger.info("Using MQTT configuration")
 
 
 class SampleOrchestrator:
@@ -34,7 +47,7 @@ class SampleOrchestrator:
             payload=None,
         )
         
-        # Message to start the counter 
+        # Message to start the counter
         self.start_count_message = IntersectDirectMessageParams(
             destination='intersect.resilience.clustering-demo.-.counting-service',
             operation='CountingExample.start_count',
@@ -100,12 +113,12 @@ class SampleOrchestrator:
                     # Check the response payload
                     if isinstance(payload, dict) and 'success' in payload:
                         if payload['success'] is False:
-                            print("Counter was already running. That's fine!")
+                            logger.info("Counter was already running. That's fine!")
                         else:
-                            print("Successfully started the counter.")
+                            logger.info("Successfully started the counter.")
                     
                     # Send the first get_count message immediately
-                    print("Starting to poll the counter...")
+                    logger.info("Starting to poll the counter...")
                     return IntersectClientCallback(messages_to_send=[self.get_count_message])
             
             # For all subsequent responses, we just get the current count
@@ -117,28 +130,28 @@ class SampleOrchestrator:
                 # Check for skips (more than 1 second difference)
                 if self.last_count >= 0 and count_value > self.last_count + 1:
                     skipped = count_value - self.last_count - 1
-                    print(f"\rSkipped {skipped} count(s)! Server: {count_value}, Client: {client_elapsed}    ")
+                    logger.warning(f"Skipped {skipped} count(s)! Server: {count_value}, Client: {client_elapsed}")
                 
                 self.last_count = count_value
                 
-                # Clear the line and print the updated value (keeps output clean)
-                print(f"\rCurrent count: {count_value} (client elapsed: {client_elapsed}s)    ", end="", flush=True)
+                # Use logger instead of print to make sure it's visible in Docker logs
+                logger.info(f"Current count: {count_value} (client elapsed: {client_elapsed}s)")
                 
-                # Send next request immediately for more accurate results
+                # Add a delay between requests to reduce load
+                time.sleep(1.0)  # Wait 1 second between requests
                 return IntersectClientCallback(messages_to_send=[self.get_count_message])
                 
             # This handles unexpected operations
             else:
-                print(f"\nReceived unexpected response: {operation}")
+                logger.warning(f"Received unexpected response: {operation}")
                 # Always continue the chain by asking for the count
                 return IntersectClientCallback(messages_to_send=[self.get_count_message])
                 
         except Exception as e:
             # Safer error handling
-            print(f"\nError in callback: {e}")
+            logger.error(f"Error in callback: {e}")
             # Always continue the chain even on errors
             return IntersectClientCallback(messages_to_send=[self.get_count_message])
-
 
 if __name__ == '__main__':
     # Initial message to start the counter

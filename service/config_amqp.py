@@ -1,5 +1,5 @@
 """
-Configuration for the INTERSECT service with RabbitMQ clustering support.
+Configuration for the INTERSECT service with RabbitMQ clustering support using AMQP.
 """
 
 from intersect_sdk.config.service import IntersectServiceConfig
@@ -21,13 +21,13 @@ hierarchy = HierarchyConfig(
 
 # Use RabbitMQ cluster configuration with Docker service names
 broker_configs = [
-    {"host": "rabbitmq1", "port": 1883},
-    {"host": "rabbitmq2", "port": 1883},
+    {"host": "rabbitmq1", "port": 5672},
+    {"host": "rabbitmq2", "port": 5672},
 ]
 
 brokers = [
     ControlPlaneConfig(
-        protocol="mqtt3.1.1",
+        protocol="amqp0.9.1",
         username="intersect_username",
         password="intersect_password",
         brokers=[BrokerConfig(**broker) for broker in broker_configs],

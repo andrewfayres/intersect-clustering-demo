@@ -7,6 +7,9 @@ from typing import Optional
 from pydantic import BaseModel, Field
 from typing_extensions import Annotated
 
+import sys
+import os
+sys.path.append('/opt')
 from intersect_sdk import (
     IntersectBaseCapabilityImplementation,
     IntersectService,
@@ -16,10 +19,20 @@ from intersect_sdk import (
 )
 
 # Import our clustering configuration
-from config import SERVICE_CONFIG
+import config
+import config_amqp
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Determine which config to use based on environment variable
+PROTOCOL = os.environ.get("PROTOCOL", "mqtt")  # Default to MQTT if not set
+if PROTOCOL == "amqp":
+    SERVICE_CONFIG = config_amqp.SERVICE_CONFIG
+    logger.info("Using AMQP configuration")
+else:
+    SERVICE_CONFIG = config.SERVICE_CONFIG
+    logger.info("Using MQTT configuration")
 
 
 class CountingServiceCapabilityImplementationState(BaseModel):

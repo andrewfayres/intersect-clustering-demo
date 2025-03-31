@@ -1,12 +1,13 @@
 # INTERSECT RabbitMQ Clustering Demo
 
-This demo showcases how to use INTERSECT SDK with RabbitMQ clustering for improved resilience. The system demonstrates manual failover between RabbitMQ cluster nodes when the primary node fails.
+This demo showcases how to use INTERSECT SDK with RabbitMQ clustering for improved resilience. The system demonstrates automatic failover between RabbitMQ cluster nodes when the primary node fails.
 
 ## Features
 
 - RabbitMQ 2-node cluster configuration
+- Support for both MQTT and AMQP protocols
 - Time-based counter that continues across failovers
-- Manual failover script to switch to backup node
+- Automatic failover between cluster nodes
 - Demonstrates resilience concepts for service-service communication
 
 ## Prerequisites
@@ -17,30 +18,36 @@ This demo showcases how to use INTERSECT SDK with RabbitMQ clustering for improv
 
 ## Setup
 
-1. Start the RabbitMQ cluster and MinIO:
+### MQTT Protocol (Default)
+
+1. Start the entire stack with Docker Compose:
 
 ```bash
-docker-compose up -d
+docker-compose up --build
 ```
 
-2. In separate terminals, start the service and client:
+This will start:
+- Two RabbitMQ nodes in a cluster
+- MinIO for object storage
+- The counting service
+- The client that polls the counting service
+
+### AMQP Protocol
+
+To run the demo with AMQP protocol instead:
 
 ```bash
-# Terminal 1 - Start the service
-cd service
-python counting_service.py
-
-# Terminal 2 - Start the client
-cd client
-python counting_client.py
+PROTOCOL=amqp docker-compose up --build
 ```
 
-## Testing Manual Failover
+This uses the same infrastructure but configures the services to use AMQP instead of MQTT.
 
-To test the cluster's manual failover capability:
+## Testing Automatic Failover
 
-1. Start both the service and client
-2. Wait until messages are being exchanged and counter is incrementing
+To test the cluster's automatic failover capability:
+
+1. Start the stack with either MQTT or AMQP protocol as described above
+2. Wait until messages are being exchanged and the counter is incrementing
 3. Simulate a node failure by stopping the primary RabbitMQ container:
 
 ```bash
@@ -48,24 +55,9 @@ To test the cluster's manual failover capability:
 docker-compose stop rabbitmq1
 ```
 
-4. The service and client will lose connection to RabbitMQ
-5. Run the failover script to update configurations to use the backup node:
-
-```bash
-python switch_to_backup.py
-```
-
-6. Restart both the service and client to connect to the backup node:
-
-```bash
-# Terminal 1 (service)
-python counting_service.py
-
-# Terminal 2 (client)
-python counting_client.py
-```
-
-7. The service should continue from where it left off (the counter value is based on elapsed time)
+4. Watch as the client and service automatically detect the failure and reconnect to rabbitmq2
+5. The counter should continue with minimal disruption
+6. The service should continue from where it left off (the counter value is based on elapsed time)
 
 ## Architecture
 
@@ -76,17 +68,32 @@ The demo consists of:
 - 1 INTERSECT service (counting example)
 - 1 INTERSECT client interacting with the service
 
-The RabbitMQ nodes share a common Erlang cookie for cluster formation. Although the MQTT client doesn't automatically fail over between brokers, our script helps simulate what this would look like in a production environment with proper failover mechanisms.
+The RabbitMQ nodes share a common Erlang cookie for cluster formation. The client and service are designed to automatically fail over to the backup node when the primary node fails.
 
 ## Implementation Notes
 
 1. **Time-Based Counter**: The counter is based on elapsed time since the service started, ensuring it's consistent even after restarts or failovers.
 
-2. **Manual Failover**: The `switch_to_backup.py` script updates configuration files to point to the backup RabbitMQ node.
+2. **Protocol Options**: 
+   - MQTT: Standard implementation using port 1883
+   - AMQP: Uses port 5672 and requires additional dependencies
 
-3. **MQTT Limitations**: MQTT in the current INTERSECT SDK doesn't support automatic failover between multiple brokers, which is why we use the manual approach in this demo.
+3. **Automatic Failover**: The SDK has been updated to support automatic failover:
+   - Both MQTT and AMQP clients can detect disconnections
+   - Services and clients automatically attempt to reconnect to alternate brokers
+   - Connection parameters allow listing multiple broker endpoints
 
-4. **Future Improvements**: A future enhanced version of the SDK could:
-   - Implement automatic failover for MQTT clients
-   - Support true clustering for both AMQP and MQTT clients
-   - Handle reconnection to multiple brokers transparently
+4. **Cluster Configuration**: The demo uses a simple 2-node RabbitMQ cluster with:
+   - Shared Erlang cookie for authentication between nodes
+   - Automatic node discovery and clustering
+   - Both MQTT and AMQP protocols enabled
+
+## Monitoring
+
+You can access the RabbitMQ management interfaces at:
+- Node 1: http://localhost:15672 
+- Node 2: http://localhost:15673
+
+Use these credentials:
+- Username: `intersect_username`
+- Password: `intersect_password`

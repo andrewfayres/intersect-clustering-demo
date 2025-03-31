@@ -13,7 +13,7 @@ services:
       # Cluster configuration
       RABBITMQ_ERLANG_COOKIE: "INTERSECT_CLUSTERING_COOKIE"
       RABBITMQ_NODENAME: "rabbit@rabbitmq1"
-      RABBITMQ_PLUGINS: "rabbitmq_management rabbitmq_mqtt"
+      RABBITMQ_PLUGINS: "rabbitmq_management rabbitmq_mqtt rabbitmq_federation"
       RABBITMQ_USERNAME: "intersect_username"
       RABBITMQ_PASSWORD: "intersect_password"
       RABBITMQ_MANAGEMENT_ALLOW_WEB_ACCESS: "yes"
@@ -23,10 +23,12 @@ services:
       test: rabbitmq-diagnostics -q ping && rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms
       interval: 10s
       retries: 5
-      start_period: 10s
+      start_period: 30s  # Increased start period to give more time for initialization
       timeout: 10s
     networks:
-      - intersect_net
+      intersect_net:
+        aliases:
+          - rabbitmq1
 
   # RabbitMQ Cluster Node 2
   rabbitmq2:
@@ -34,7 +36,7 @@ services:
     hostname: rabbitmq2
     ports:
       - "1884:1883" # MQTT port
-      - "5673:5672" # AMQP port 
+      - "5673:5672" # AMQP port
       - "15673:15672" # Web UI
     depends_on:
       rabbitmq1:
@@ -44,7 +46,7 @@ services:
       RABBITMQ_ERLANG_COOKIE: "INTERSECT_CLUSTERING_COOKIE"
       RABBITMQ_NODENAME: "rabbit@rabbitmq2"
       RABBITMQ_CLUSTER_NODE_NAME: "rabbit@rabbitmq1"
-      RABBITMQ_PLUGINS: "rabbitmq_management rabbitmq_mqtt"
+      RABBITMQ_PLUGINS: "rabbitmq_management rabbitmq_mqtt rabbitmq_federation"
       RABBITMQ_USERNAME: "intersect_username"
       RABBITMQ_PASSWORD: "intersect_password"
       RABBITMQ_MANAGEMENT_ALLOW_WEB_ACCESS: "yes"
@@ -54,10 +56,12 @@ services:
       test: rabbitmq-diagnostics -q ping && rabbitmq-diagnostics -q check_running && rabbitmq-diagnostics -q check_local_alarms
       interval: 10s
       retries: 5
-      start_period: 10s
+      start_period: 30s  # Increased start period to give more time for initialization
       timeout: 10s
     networks:
-      - intersect_net
+      intersect_net:
+        aliases:
+          - rabbitmq2
 
   # MinIO for object storage (if needed by the example)
   minio:
@@ -69,7 +73,65 @@ services:
       - "9000:9000" # main MINIO API port
       - "9001:9001" # web UI
     networks:
-      - intersect_net
+      intersect_net:
+        aliases:
+          - minio
+
+  client:
+    image: intersect-client
+    build:
+      context: .
+      dockerfile: ./client/Dockerfile
+    volumes:
+      - ./client:/app
+      - ./python-sdk:/opt/intersect_sdk
+    environment:
+      PYTHONPATH: /opt/intersect_sdk
+      PROTOCOL: ${PROTOCOL:-mqtt}
+    depends_on:
+      rabbitmq1:
+        condition: service_healthy
+      rabbitmq2:
+        condition: service_healthy
+    command: >
+      sh -c "
+        echo 'Waiting for RabbitMQ cluster to fully initialize...' &&
+        sleep 15 &&
+        echo 'Starting client...' &&
+        python /app/counting_client.py
+      "
+    networks:
+      intersect_net:
+        aliases:
+          - client
+
+  service:
+    image: intersect-service
+    build:
+      context: .
+      dockerfile: ./service/Dockerfile
+    volumes:
+      - ./service:/app
+      - ./python-sdk:/opt/intersect_sdk
+    environment:
+      PYTHONPATH: /opt/intersect_sdk
+      PROTOCOL: ${PROTOCOL:-mqtt}
+    depends_on:
+      rabbitmq1:
+        condition: service_healthy
+      rabbitmq2:
+        condition: service_healthy
+    command: >
+      sh -c "
+        echo 'Waiting for RabbitMQ cluster to fully initialize...' &&
+        sleep 10 &&
+        echo 'Starting service...' &&
+        python /app/counting_service.py
+      "
+    networks:
+      intersect_net:
+        aliases:
+          - service
 
 volumes:
   rabbitmq1_data:
@@ -78,3 +140,4 @@ volumes:
 networks:
   intersect_net:
     driver: bridge
+    name: intersect_net
